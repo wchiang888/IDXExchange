@@ -10,6 +10,20 @@ const COLUMNS = {
   baths:    'LM_Dec_3'  
 };
 
+function validateId(id) {
+  const errors = [];
+  if (!id || id.trim() === '') {
+    errors.push('id is required');
+  }
+  if (id.length > 100) {
+    errors.push('id is too long — maximum 100 characters');
+  }
+  if (!/^[a-zA-Z0-9-]+$/.test(id)) {
+    errors.push('id contains invalid characters — only letters, numbers, and hyphens allowed');
+  }
+  return errors;
+}
+
 router.get('/', async (req, res) => {
   const {
     city, zipcode, minPrice, maxPrice,
@@ -82,7 +96,7 @@ router.get('/', async (req, res) => {
     const countQuery = `SELECT COUNT(*) as total FROM rets_property ${whereClause}`;
     const [countResult] = await pool.query(countQuery, values);
     const total = countResult[0].total;
-	
+
     const dataQuery = `SELECT * FROM rets_property ${whereClause} LIMIT ? OFFSET ?`;
     const [rows] = await pool.query(dataQuery, [...values, limitNum, offsetNum]);
 
@@ -95,6 +109,75 @@ router.get('/', async (req, res) => {
 
   } catch (error) {
     console.error(error);
+    res.status(500).json({ status: 'error', message: 'Database error' });
+  }
+});
+
+router.get('/:id/openhouses', async (req, res) => {
+  const { id } = req.params;
+
+  const idErrors = validateId(id);
+  if (idErrors.length > 0) {
+    return res.status(400).json({ status: 'error', errors: idErrors });
+  }
+
+  try {
+    const [propertyRows] = await pool.query(
+      'SELECT L_ListingID FROM rets_property WHERE L_ListingID = ? LIMIT 1',
+      [id]
+    );
+
+    if (propertyRows.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: `No property found with listing ID: ${id}`
+      });
+    }
+
+    const [openhouses] = await pool.query(
+      `SELECT * FROM rets_openhouse
+       WHERE L_ListingID = ?
+       ORDER BY OpenHouseDate ASC, OH_StartTime ASC`,
+      [id]
+    );
+
+    res.json({
+      listing_id: id,
+      total: openhouses.length,
+      results: openhouses
+    });
+
+  } catch (error) {
+    console.error('Openhouses error for ID:', id, error);
+    res.status(500).json({ status: 'error', message: 'Database error' });
+  }
+});
+
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+
+  const idErrors = validateId(id);
+  if (idErrors.length > 0) {
+    return res.status(400).json({ status: 'error', errors: idErrors });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      'SELECT * FROM rets_property WHERE L_ListingID = ? LIMIT 1',
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message: `No property found with listing ID: ${id}`
+      });
+    }
+
+    res.json(rows[0]);
+
+  } catch (error) {
+    console.error('Property detail error for ID:', id, error);
     res.status(500).json({ status: 'error', message: 'Database error' });
   }
 });
